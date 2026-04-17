@@ -22,45 +22,72 @@ let favoriteWeekends =
 
 //fetching country names and codes from api
 async function GetCountryName() {
-  let countryName = await fetch(
-    "https://date.nager.at/api/v3/AvailableCountries",
-  );
-  let countryData = await countryName.json();
-  countriesList = countryData;
-  allCountries();
+  try {
+    let countryName = await fetch(
+      "https://date.nager.at/api/v3/AvailableCountries",
+    );
+    let countryData = await countryName.json();
+    countriesList = Array.isArray(countryData) ? countryData : [];
+    allCountries();
+    
+    if (countriesList.length) {
+      const defaultCountry = countriesList[0];
+      const countrySelect = document.getElementById("global-country");
+
+      if (countrySelect) {
+        countrySelect.value = defaultCountry.countryCode;
+      }
+
+      showCountry(defaultCountry);
+      await syncCityWithCountry(defaultCountry.countryCode);
+      fetchHolidays(defaultCountry.countryCode);
+    }
+  } catch (error) {
+    console.error("Failed to load countries", error);
+  }
 }
 
 async function fetchgOfficialName(countryCode) {
+  if (!countryCode) return null;
+
   let officialName = await fetch(
     `https://restcountries.com/v3.1/alpha/${countryCode}`,
   );
   let officialNameData = await officialName.json();
+  if (!Array.isArray(officialNameData) || !officialNameData.length) return null;
+
   names = officialNameData[0];
+
+  const currencyKey = Object.keys(names.currencies || {})[0];
+  const firstCurrency = currencyKey ? names.currencies[currencyKey] : null;
+
   return {
-    officialName: names.name.official,
-    region: names.region,
-    subregion: names.subregion,
-    continents: names.continents,
-    timezones: names.timezones,
-    capital: names.capital,
+    officialName: names.name?.official || "Unknown",
+    region: names.region || "Unknown",
+    subregion: names.subregion || "Unknown",
+    continents: names.continents || [],
+    timezones: names.timezones || [],
+    capital: names.capital || [],
     population: names.population,
-    callingCodes: names.idd.root + names.idd.suffixes[0],
-    drivingSide: names.car.side,
+    callingCodes: `${names.idd?.root || ""}${names.idd?.suffixes?.[0] || ""}`,
+    drivingSide: names.car?.side || "Unknown",
     area: names.area,
-    weekStartsOn: names.startOfWeek,
-    currencyName: names.currencies[Object.keys(names.currencies)[0]].name,
-    currencySymbol: names.currencies[Object.keys(names.currencies)[0]].symbol,
-    languages: Object.values(names.languages).join(", "),
+    weekStartsOn: names.startOfWeek || "Unknown",
+    currencyName: firstCurrency?.name || "Unknown",
+    currencySymbol: firstCurrency?.symbol || "",
+    languages: names.languages ? Object.values(names.languages).join(", ") : "Unknown",
     neibghbors: names.borders,
-    maps: names.maps.googleMaps,
-    code: names.cca2,
-    lat: names.latlng[0],
-    lng: names.latlng[1],
+    maps: names.maps?.googleMaps || "#",
+    code: names.cca2 || countryCode,
+    lat: names.latlng?.[0],
+    lng: names.latlng?.[1],
   };
 }
 
 function allCountries() {
   const select = document.getElementById("global-country");
+  if (!select) return;
+
   select.innerHTML = "";
 
   const placeholder = document.createElement("option");
@@ -80,6 +107,7 @@ function allCountries() {
 
 function showCountry(country) {
   const container = document.getElementById("selected-destination");
+  if (!container || !country) return;
 
   container.innerHTML = `
     <img
@@ -88,6 +116,22 @@ function showCountry(country) {
     />
     <span>${country.name}</span>
   `;
+}
+
+async function syncCityWithCountry(countryCode) {
+  const citySelect = document.getElementById("global-city");
+  if (!countryCode || !citySelect) return;
+
+  try {
+    const details = await fetchgOfficialName(countryCode);
+    const capital = details?.capital?.[0];
+
+    citySelect.innerHTML = capital
+      ? `<option value="${capital}" selected>${capital}</option>`
+      : `<option value="" selected>No capital data</option>`;
+  } catch (error) {
+    console.error("Failed to load capital city", error);
+  }
 }
 //the second part before the explore button
 document
@@ -99,7 +143,10 @@ document
       (country) => country.countryCode === selectedCode,
     );
 
+    if (!selectedCountry) return;
+
     showCountry(selectedCountry);
+    await syncCityWithCountry(selectedCode);
     fetchHolidays(selectedCode);
   });
 
@@ -107,13 +154,19 @@ document
 //when u press explore button it will send the data to the dashboard (in the next section)
 function Explore() {
   let exploreBtn = document.getElementById("explore-btn");
+  if (!exploreBtn) return;
+
   exploreBtn.addEventListener("click", async function () {
     const selectedCode = document.getElementById("global-country").value;
+    if (!selectedCode) return;
+
     const countryDetails = await fetchgOfficialName(selectedCode);
+    if (!countryDetails) return;
 
     const selectedCountry = countriesList.find(
       (country) => country.countryCode === selectedCode,
     );
+    if (!selectedCountry) return;
 
     // now we need to change the country info in the dashboard section
     const countryInfo = document.getElementById("country-info");
@@ -140,7 +193,7 @@ function Explore() {
     capital.innerHTML = `
                   <i class="fa-solid fa-building-columns"></i>
                   <span class="label">Capital</span>
-                  <span class="value">${countryDetails.capital[0]}</span>
+                  <span class="value">${countryDetails.capital?.[0] || "Unknown"}</span>
     `;
     const population = document.getElementById("Population");
     population.innerHTML = `
@@ -158,13 +211,13 @@ function Explore() {
     continent.innerHTML = `
                   <i class="fa-solid fa-globe"></i>
                   <span class="label">Continent</span>
-                  <span class="value">${countryDetails.continents[0]}</span>
+                  <span class="value">${countryDetails.continents?.[0] || "Unknown"}</span>
     `;
     const timezone = document.getElementById("Timezone");
     timezone.innerHTML = `
                   <i class="fa-solid fa-clock"></i>
                   <span class="label">Timezone</span>
-                  <span class="value">${countryDetails.timezones[0]}</span>
+                  <span class="value">${countryDetails.timezones?.[0] || "Unknown"}</span>
     `;
     const drivingSide = document.getElementById("DrivingSide");
     drivingSide.innerHTML = `
@@ -209,6 +262,8 @@ Explore();
 // when u press on dashboard link it swaps to dashboard section
 function Dashboardpress() {
   const DashboardLink = document.getElementById("Dashboard-link");
+  if (!DashboardLink) return;
+
   DashboardLink.addEventListener("click", function () {
     holidaysSwaper.classList.remove("active");
     eventsSwaper.classList.remove("active");
@@ -226,6 +281,8 @@ Dashboardpress();
 // when u press on holidays link it swaps to holidays section
 function Holidayspress() {
   const HolidayLink = document.getElementById("Holidays-link");
+  if (!HolidayLink) return;
+
   HolidayLink.addEventListener("click", function () {
     dashboardSwaper.classList.remove("active");
     holidaysSwaper.classList.add("active");
@@ -402,6 +459,7 @@ function eventsPresentation(eventsList) {
 // when u press on events link it swaps to events section + fetches events
 function Eventspress() {
   const EventsLink = document.getElementById("Events-link");
+  if (!EventsLink) return;
 
   EventsLink.addEventListener("click", async function () {
     dashboardSwaper.classList.remove("active");
@@ -417,14 +475,23 @@ function Eventspress() {
     if (!selectedCode) return;
 
     const countryDetails = await fetchgOfficialName(selectedCode);
+    if (!countryDetails) return;
 
-    const city = countryDetails.capital[0];
+    const city = countryDetails.capital?.[0] || "";
     const countryCode = countryDetails.code;
 
-    document.querySelector(".selection-flag").src =
-      `https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`;
+    if (!city || !countryCode) return;
 
-    document.querySelector(".selection-city").textContent = `- ${city}`;
+    const eventsView = document.getElementById("events-view");
+    const selectionFlag = eventsView?.querySelector(".selection-flag");
+    const selectionCity = eventsView?.querySelector(".selection-city");
+
+    if (selectionFlag) {
+      selectionFlag.src = `https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`;
+    }
+    if (selectionCity) {
+      selectionCity.textContent = `• ${city}`;
+    }
 
     const eventsList = await fetchEvents(city, countryCode);
     eventsPresentation(eventsList);
@@ -446,10 +513,17 @@ async function fetchWeather(latitude, longitude) {
 // when u press on weather link it swaps to weather section
 function Weatherpress() {
   const WeatherLink = document.getElementById("Weather-link");
+  if (!WeatherLink) return;
+
   WeatherLink.addEventListener("click", async function () {
+    const selectedCode = document.getElementById("global-country").value;
+    if (!selectedCode) return;
+
     let location = await fetchgOfficialName(
-      document.getElementById("global-country").value,
+      selectedCode,
     );
+    if (!location?.lat || !location?.lng) return;
+
     let latitude = location.lat;
     let longitude = location.lng;
     fetchWeather(latitude, longitude);
@@ -511,6 +585,7 @@ function renderHourly(weatherInfo) {
   for (let i = start; i < start + 12 && i < times.length; i++) {
     const code = weatherInfo.hourly.weather_code[i];
     const pop = weatherInfo.hourly.precipitation_probability[i] || 0;
+    const hour = new Date(times[i]).getHours();
 
     const meta = getWeatherMeta(code);
 
@@ -556,10 +631,12 @@ function getWeatherMeta(code) {
 
 function weatherPresentation(weatherInfo) {
   let weather = document.getElementById("weather-content");
+  if (!weather || !weatherInfo?.current || !weatherInfo?.hourly || !weatherInfo?.daily) {
+    return;
+  }
 
   const timezone = weatherInfo.timezone;
   const localTime = getLocalTime(timezone);
-  var time = getLocalTime(timezone);
 
   var randomNumber = Math.floor(Math.random() * 100);
 
@@ -663,7 +740,9 @@ function weatherPresentation(weatherInfo) {
   );
   // current time in that country
 
-  for (let i = currentIndex; i < currentIndex + 12; i++) {
+  const safeStartIndex = currentIndex === -1 ? 0 : currentIndex;
+
+  for (let i = safeStartIndex; i < safeStartIndex + 12; i++) {
     if (!weatherInfo.hourly.time[i]) break;
 
     const hour = new Date(weatherInfo.hourly.time[i]).getHours();
@@ -717,6 +796,8 @@ function weatherPresentation(weatherInfo) {
 // when u press on long weekends link it swaps to long weekends section
 function LongWeekendspress() {
   const LongWeekendsLink = document.getElementById("LongWeekends-link");
+  if (!LongWeekendsLink) return;
+
   LongWeekendsLink.addEventListener("click", async function () {
     dashboardSwaper.classList.remove("active");
     holidaysSwaper.classList.remove("active");
@@ -934,11 +1015,16 @@ function sunTimesPresentation(sunTimesInfo, cap) {
 // when u press on suntimes it swaps to suntimes section
 function SunTimespress() {
   const SunTimesLink = document.getElementById("SunTimes-link");
+  if (!SunTimesLink) return;
 
   SunTimesLink.addEventListener("click", async function () {
+    const selectedCode = document.getElementById("global-country").value;
+    if (!selectedCode) return;
+
     const cap = await fetchgOfficialName(
-      document.getElementById("global-country").value,
+      selectedCode,
     );
+    if (!cap?.lat || !cap?.lng) return;
 
     const sunTimesInfo = await fetchSunTimes(cap.lat, cap.lng);
 
@@ -960,6 +1046,8 @@ SunTimespress();
 
 function MyPlanspress() {
   const MyPlansLink = document.getElementById("MyPlans-link");
+  if (!MyPlansLink) return;
+
   MyPlansLink.addEventListener("click", function () {
     const favoriteHolidays =
       JSON.parse(localStorage.getItem("favoriteHolidays")) || [];
@@ -1002,6 +1090,12 @@ function MyPlanspress() {
       }
     }
     document.getElementById("plans-content").innerHTML = favHolidaysHTML;
+
+    const plansCount = document.getElementById("plans-count");
+    if (plansCount) {
+      plansCount.textContent = String(favoriteHolidays.length);
+      plansCount.classList.toggle("hidden", favoriteHolidays.length === 0);
+    }
   });
 }
 document
@@ -1020,17 +1114,15 @@ document
     localStorage.setItem("favoriteHolidays", JSON.stringify(favoriteHolidays));
 
     button.closest(".plan-card").remove();
+
+    const plansCount = document.getElementById("plans-count");
+    if (plansCount) {
+      plansCount.textContent = String(favoriteHolidays.length);
+      plansCount.classList.toggle("hidden", favoriteHolidays.length === 0);
+    }
   });
 MyPlanspress();
-    document.getElementById("plans-content").innerText =
-      favoriteHolidays.length;
 
 ///////////////////////////////////////////////////////////////////////////////////////////
-// when u press on sun times link it swaps to sun times section
-SunTimespress();
 GetCountryName();
-let capi = await fetchgOfficialName(
-  document.getElementById("global-country").value,
-);
-document.getElementById("capitalia").value = `${capi.capital[0]}`;
 console.log(favoriteHolidays);
